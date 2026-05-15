@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from sqlalchemy import select
 
@@ -7,11 +9,58 @@ from database.models import Vacancy
 from scrapers import DjinniScraper, DouScraper
 from scrapers.base import ScrapedVacancy
 
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+DJINNI_MOCK_HTML = (FIXTURES_DIR / "djinni_jobs.html").read_text(encoding="utf-8")
+
 
 @pytest.mark.asyncio
-async def test_djinni_scraper_stub_returns_empty_list() -> None:
+async def test_djinni_parse_vacancies_from_mock_html() -> None:
     scraper = DjinniScraper()
-    assert scraper.parse_vacancies("") == []
+    vacancies = scraper.parse_vacancies(DJINNI_MOCK_HTML)
+
+    assert len(vacancies) == 3
+
+    junior = next(v for v in vacancies if v.external_id == "100001")
+    assert junior.title == "Python Junior Developer"
+    assert junior.url == "https://djinni.co/jobs/100001-python-junior-developer/"
+    assert "junior engineer" in junior.description
+
+    senior = next(v for v in vacancies if v.external_id == "100002")
+    assert senior.title == "Senior Python Developer"
+    assert senior.url == "https://djinni.co/jobs/100002-senior-python-developer/"
+
+    intern = next(v for v in vacancies if v.external_id == "100003")
+    assert intern.title == "Python Developer"
+    assert "стажування" in intern.description
+
+
+@pytest.mark.asyncio
+async def test_djinni_scrape_filters_non_matching_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
+    scraper = DjinniScraper()
+
+    async def mock_fetch_page(_url: str) -> str:
+        return DJINNI_MOCK_HTML
+
+    monkeypatch.setattr(scraper, "fetch_page", mock_fetch_page)
+
+    async with scraper:
+        vacancies = await scraper.scrape()
+
+    assert len(vacancies) == 2
+    ids = {v.external_id for v in vacancies}
+    assert ids == {"100001", "100003"}
+    assert "100002" not in ids
+
+
+def test_djinni_keyword_filter_case_insensitive() -> None:
+    scraper = DjinniScraper()
+    vacancy = ScrapedVacancy(
+        external_id="200",
+        title="Python Developer",
+        url="https://djinni.co/jobs/200",
+        description="Great opportunity for a TRAINEE with mentorship.",
+    )
+    assert scraper.matches_keyword_filter(vacancy) is True
 
 
 @pytest.mark.asyncio
