@@ -6,12 +6,14 @@ import pytest
 from sqlalchemy import select
 
 from database.models import Vacancy
-from scrapers import DjinniScraper, DouScraper
+from scrapers import DjinniScraper, DouScraper, RobotaUaScraper, WorkUaScraper
 from scrapers.base import ScrapedVacancy
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 DJINNI_MOCK_HTML = (FIXTURES_DIR / "djinni_jobs.html").read_text(encoding="utf-8")
 DOU_MOCK_HTML = (FIXTURES_DIR / "dou_jobs.html").read_text(encoding="utf-8")
+WORK_UA_MOCK_HTML = (FIXTURES_DIR / "work_ua_jobs.html").read_text(encoding="utf-8")
+ROBOTA_UA_MOCK_HTML = (FIXTURES_DIR / "robota_ua_jobs.html").read_text(encoding="utf-8")
 
 
 @pytest.mark.asyncio
@@ -102,6 +104,82 @@ async def test_dou_scrape_filters_non_matching_jobs(monkeypatch: pytest.MonkeyPa
     ids = {v.external_id for v in vacancies}
     assert ids == {"200001", "200003"}
     assert "200002" not in ids
+
+
+@pytest.mark.asyncio
+async def test_work_ua_parse_vacancies_from_mock_html() -> None:
+    scraper = WorkUaScraper()
+    vacancies = scraper.parse_vacancies(WORK_UA_MOCK_HTML)
+
+    assert len(vacancies) == 3
+
+    junior = next(v for v in vacancies if v.external_id == "300001")
+    assert junior.title == "Python Junior Developer"
+    assert junior.url == "https://www.work.ua/jobs/300001/"
+    assert "junior Python" in junior.description
+
+    senior = next(v for v in vacancies if v.external_id == "300002")
+    assert senior.title == "Senior Python Developer"
+
+    intern = next(v for v in vacancies if v.external_id == "300003")
+    assert "стажування" in intern.description
+
+
+@pytest.mark.asyncio
+async def test_work_ua_scrape_filters_non_matching_jobs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scraper = WorkUaScraper()
+
+    async def mock_fetch_page(_url: str) -> str:
+        return WORK_UA_MOCK_HTML
+
+    monkeypatch.setattr(scraper, "fetch_page", mock_fetch_page)
+
+    async with scraper:
+        vacancies = await scraper.scrape()
+
+    assert len(vacancies) == 2
+    ids = {v.external_id for v in vacancies}
+    assert ids == {"300001", "300003"}
+
+
+@pytest.mark.asyncio
+async def test_robota_ua_parse_vacancies_from_mock_html() -> None:
+    scraper = RobotaUaScraper()
+    vacancies = scraper.parse_vacancies(ROBOTA_UA_MOCK_HTML)
+
+    assert len(vacancies) == 3
+
+    junior = next(v for v in vacancies if v.external_id == "400001")
+    assert junior.title == "Python Junior Developer"
+    assert junior.url == "https://robota.ua/company100/vacancy400001"
+    assert "junior Python" in junior.description
+
+    senior = next(v for v in vacancies if v.external_id == "400002")
+    assert senior.title == "Senior Python Developer"
+
+    intern = next(v for v in vacancies if v.external_id == "400003")
+    assert "стажування" in intern.description
+
+
+@pytest.mark.asyncio
+async def test_robota_ua_scrape_filters_non_matching_jobs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scraper = RobotaUaScraper()
+
+    async def mock_fetch_page(_url: str) -> str:
+        return ROBOTA_UA_MOCK_HTML
+
+    monkeypatch.setattr(scraper, "fetch_page", mock_fetch_page)
+
+    async with scraper:
+        vacancies = await scraper.scrape()
+
+    assert len(vacancies) == 2
+    ids = {v.external_id for v in vacancies}
+    assert ids == {"400001", "400003"}
 
 
 def test_dou_keyword_filter_case_insensitive() -> None:
