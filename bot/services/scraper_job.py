@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import html
 import logging
 
 from aiogram import Bot
+from aiogram.exceptions import (
+    TelegramBadRequest,
+    TelegramForbiddenError,
+    TelegramNotFound,
+)
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -12,6 +18,48 @@ from database.session import async_session_factory
 from scrapers import DjinniScraper, DouScraper
 
 logger = logging.getLogger(__name__)
+
+_PLATFORM_LABEL = {"djinni": "Djinni", "dou": "DOU"}
+
+
+def _platform_label(platform: str) -> str:
+    return _PLATFORM_LABEL.get(platform, html.escape(platform))
+
+
+def _format_new_vacancy_message(platform: str, title: str, url: str) -> str:
+    safe_title = html.escape(title)
+    safe_url = html.escape(url, quote=True)
+    label = html.escape(_platform_label(platform))
+    return (
+        f"🔥 <b>Нова вакансія ({label})</b>\n"
+        f"<b>Посада:</b> {safe_title}\n"
+        f'<a href="{safe_url}">Переглянути вакансію</a>'
+    )
+
+
+async def _notify_new_vacancy(bot: Bot, platform: str, title: str, url: str) -> None:
+    if not ADMIN_CHAT_IDS:
+        return
+    text = _format_new_vacancy_message(platform, title, url)
+    for chat_id in ADMIN_CHAT_IDS:
+        try:
+            await bot.send_message(chat_id, text)
+        except TelegramForbiddenError:
+            logger.warning(
+                "Could not notify chat_id=%s: bot was blocked or kicked (forbidden)",
+                chat_id,
+            )
+        except TelegramNotFound:
+            logger.warning(
+                "Could not notify chat_id=%s: chat not found (check ADMIN_CHAT_IDS)",
+                chat_id,
+            )
+        except TelegramBadRequest as e:
+            logger.warning(
+                "Could not notify chat_id=%s: bad request — %s",
+                chat_id,
+                e,
+            )
 
 
 async def run_scraper_job(bot: Bot | None = None) -> int:
@@ -48,14 +96,10 @@ async def run_scraper_job(bot: Bot | None = None) -> int:
                         continue
 
                     new_count += 1
-                    if bot and ADMIN_CHAT_IDS:
-                        text = (
-                            f"<b>{item.title}</b>\n"
-                            f"Platform: {scraper.platform}\n"
-                            f"<a href=\"{item.url}\">Open vacancy</a>"
+                    if bot is not None:
+                        await _notify_new_vacancy(
+                            bot, scraper.platform, item.title, item.url
                         )
-                        for chat_id in ADMIN_CHAT_IDS:
-                            await bot.send_message(chat_id, text)
 
     logger.info("Scraper job finished, %s new vacancies saved", new_count)
     return new_count

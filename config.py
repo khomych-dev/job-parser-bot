@@ -3,7 +3,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
 
 SEARCH_KEYWORDS = ("Python", "Remote")
 TITLE_FILTER_KEYWORDS = (
@@ -17,29 +20,26 @@ TITLE_FILTER_KEYWORDS = (
 _DEFAULT_SCRAPE_INTERVAL_MINUTES = 20
 
 
-def _load_dotenv(path: Path | None = None) -> None:
-    env_path = path or BASE_DIR / ".env"
-    if not env_path.is_file():
-        return
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+def _parse_admin_chat_ids(raw: str | None) -> list[int]:
+    """Parse comma-separated Telegram chat/user IDs; empty means no admin notifications."""
+    if raw is None or not raw.strip():
+        return []
+    result: list[int] = []
+    for segment in raw.split(","):
+        part = segment.strip()
+        if not part:
             continue
-        key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-
-
-_load_dotenv()
-
-
-def _parse_chat_ids(raw: str) -> tuple[int, ...]:
-    if not raw.strip():
-        return ()
-    return tuple(int(part.strip()) for part in raw.split(",") if part.strip())
+        try:
+            result.append(int(part))
+        except ValueError as e:
+            raise ValueError(
+                f"ADMIN_CHAT_IDS must be comma-separated integers, invalid segment: {part!r}"
+            ) from e
+    return result
 
 
 BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
-ADMIN_CHAT_IDS: tuple[int, ...] = _parse_chat_ids(os.getenv("ADMIN_CHAT_IDS", ""))
+ADMIN_CHAT_IDS: list[int] = _parse_admin_chat_ids(os.getenv("ADMIN_CHAT_IDS"))
 DATABASE_URL: str = os.getenv(
     "DATABASE_URL",
     f"sqlite+aiosqlite:///{BASE_DIR / 'data' / 'jobs.db'}",

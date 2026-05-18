@@ -3,14 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from pathlib import Path
 
-from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot import create_bot, create_dispatcher
 from bot.services import run_scraper_job
-from config import BASE_DIR, SCRAPE_INTERVAL_MINUTES
+from config import ADMIN_CHAT_IDS, BASE_DIR, SCRAPE_INTERVAL_MINUTES
 from database import create_tables
 
 logging.basicConfig(
@@ -32,6 +30,16 @@ async def main() -> None:
 
     bot = create_bot()
     dp = create_dispatcher()
+    if not ADMIN_CHAT_IDS:
+        logger.warning(
+            "ADMIN_CHAT_IDS is empty; new vacancies will be saved but not sent to Telegram"
+        )
+    else:
+        logger.info(
+            "Vacancy notifications will be sent to chat_ids=%s",
+            ADMIN_CHAT_IDS,
+        )
+
     scheduler = AsyncIOScheduler()
 
     async def scheduled_scrape() -> None:
