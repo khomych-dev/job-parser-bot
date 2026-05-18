@@ -11,6 +11,7 @@ from scrapers.base import ScrapedVacancy
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 DJINNI_MOCK_HTML = (FIXTURES_DIR / "djinni_jobs.html").read_text(encoding="utf-8")
+DOU_MOCK_HTML = (FIXTURES_DIR / "dou_jobs.html").read_text(encoding="utf-8")
 
 
 @pytest.mark.asyncio
@@ -64,9 +65,54 @@ def test_djinni_keyword_filter_case_insensitive() -> None:
 
 
 @pytest.mark.asyncio
-async def test_dou_scraper_stub_returns_empty_list() -> None:
+async def test_dou_parse_vacancies_from_mock_html() -> None:
     scraper = DouScraper()
-    assert scraper.parse_vacancies("") == []
+    vacancies = scraper.parse_vacancies(DOU_MOCK_HTML)
+
+    assert len(vacancies) == 3
+
+    junior = next(v for v in vacancies if v.external_id == "200001")
+    assert junior.title == "Python Junior Developer"
+    assert junior.url == "https://jobs.dou.ua/companies/acme/vacancies/200001/"
+    assert "junior Python" in junior.description
+
+    senior = next(v for v in vacancies if v.external_id == "200002")
+    assert senior.title == "Senior Python Developer"
+    assert senior.url == "https://jobs.dou.ua/companies/acme/vacancies/200002/"
+
+    intern = next(v for v in vacancies if v.external_id == "200003")
+    assert intern.title == "Python Developer"
+    assert intern.url == "https://jobs.dou.ua/companies/startup/vacancies/200003/"
+    assert "стажування" in intern.description
+
+
+@pytest.mark.asyncio
+async def test_dou_scrape_filters_non_matching_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
+    scraper = DouScraper()
+
+    async def mock_fetch_page(_url: str) -> str:
+        return DOU_MOCK_HTML
+
+    monkeypatch.setattr(scraper, "fetch_page", mock_fetch_page)
+
+    async with scraper:
+        vacancies = await scraper.scrape()
+
+    assert len(vacancies) == 2
+    ids = {v.external_id for v in vacancies}
+    assert ids == {"200001", "200003"}
+    assert "200002" not in ids
+
+
+def test_dou_keyword_filter_case_insensitive() -> None:
+    scraper = DouScraper()
+    vacancy = ScrapedVacancy(
+        external_id="300",
+        title="Python Developer",
+        url="https://jobs.dou.ua/companies/acme/vacancies/300/",
+        description="Internship program for beginners.",
+    )
+    assert scraper.matches_keyword_filter(vacancy) is True
 
 
 def test_keyword_filter_matches_junior_in_title() -> None:
